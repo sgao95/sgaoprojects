@@ -1,0 +1,650 @@
+---
+title: "Identifying Risk Factors to Predict Stroke"
+subtitle: "Categorical Data Analysis Final Project"
+author: "Shibo Gao"
+date: "2024-12-10"
+output: pdf_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE,
+                      echo = FALSE, 
+                      message = FALSE, 
+                      fig.align = "center",
+                      tidy=TRUE,
+                      tidy.opts=list(width.cutoff=100), 
+                      fig.show="hold", 
+                      out.width="45%")
+
+library(knitr)
+library(kableExtra)
+library(tidyverse)
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(GGally)
+library(corrplot)
+library(reshape2)
+library(sjPlot)
+library(janitor)
+library(pROC)
+library(ROCR)
+library(oddsratio)
+library(epitools)
+library(lmtest)
+library(car)
+```
+
+```{r data}
+stroke.data <- read_csv("C:/Users/orippee/OneDrive - University of Kansas Medical Center/Graduate/BIOS 835 - Categorical/Final Project/healthcare-dataset-stroke-data.csv")
+
+#summary(stroke.data)
+
+#Remove columns in characters and id column, make this table into a new dataset.
+#sapply(stroke.data, class)
+
+#write.csv(data, file = "C:/Users/orippee/OneDrive - University of Kansas Medical Center/Graduate/BIOS 835 - Categorical/Final Project/data.csv")
+
+#stroke.data <- read_csv("C:/Users/kateg/OneDrive/Desktop/BIOS 835/Final Project/healthcare-dataset-stroke-data.csv")
+stroke.data$bmi <- as.numeric(stroke.data$bmi)
+data <- subset(stroke.data, select = -c(id))
+```
+
+# Abstract
+
+Stroke is a leading cause of death and long-term disability in the United States, affecting approximately 800,000 individuals annually. Early prediction of stroke risk is crucial for timely intervention and prevention. This study aims to identify key risk factors for stroke and develop a predictive model using logistic regression. The analysis was based on a dataset of 5110 patients, including 12 variables such as age, hypertension, heart disease, smoking status, and average glucose level. The final model identified age, hypertension, and average glucose level as significant predictors of stroke. The logistic regression model was optimized to predict the likelihood of stroke, with the reduced model achieving an AUC of 0.857, nearly identical to the full model. The odds of stroke were found to be 1.7 times higher in individuals with hypertension compared to those without, and the probability of stroke increased with age and average glucose levels. The predictive model offers a valuable tool for identifying individuals at elevated risk, enabling targeted prevention strategies. These findings underscore the importance of early detection and personalized intervention in reducing stroke incidence and improving health outcomes. Future research should focus on incorporating additional risk factors and refining the model for broader application in clinical practice.
+
+# Introduction
+
+Stroke is a life-threatening event that affects about 800,000 people in the United States each year. It occurs when there is a loss of blood flow to part of the brain. The brain cells cannot get the oxygen and nutrients they need from blood, and they start to die within a few minutes. This can cause lasting brain damage, long-term disability, or even death [1, 2]. There are two major types of stroke with different symptoms and outcomes: hemorrhagic and ischemic. A hemorrhagic stroke is caused by leaking or bursting of a blood vessel in the brain. An ischemic stroke is caused by a blocked artery in the brain, which is the most common type of stroke. Some people may have only a temporary disruption of blood flow to the brain called transient ischemic attack (TIA) which does not cause lasting symptoms, so it sometimes called “mini-stroke”. While TIA does not result in permanent symptoms, it serves as a warning sign, as individuals who have experienced TIA are at a significantly higher risk of suffering a full stroke [4, 5]. 
+
+Several factors can increase the likelihood of experiencing a stroke. These include medical conditions such as heart attack, TIA, a history of previous strokes, and heart diseases like atrial fibrillation and heart failure. Additional risk factors encompass blood clotting disorders, alcohol consumption, a sedentary lifestyle, obesity, diabetes, high blood cholesterol, smoking, carotid artery stenosis due to atherosclerosis, hypertension, and the use of substances like amphetamines and cocaine [4, 7]. 
+
+Given the significant health burden of stroke, early prediction of stroke risk is critical to reducing its incidence and improving health outcomes. Identifying individuals at higher risk allows for timely intervention, lifestyle modifications, and preventive treatments that can significantly lower the likelihood of severe complications. This study aims to analyze key risk factors for stroke using the stroke dataset and to develop a predictive model. Specifically, a logistic regression model will be employed to quantify the associations between these risk factors and the likelihood of experiencing a stroke. 
+
+While this research offers promising opportunities for improving stroke prevention, it also faces challenges such as data quality issues, potential class imbalance in the dataset, and the complexity of interactions among risk factors. Addressing these challenges is critical to building an accurate and reliable predictive model. By emphasizing early prediction and overcoming these modeling limitations, this research seeks to inform targeted prevention strategies, support clinical decision-making, and ultimately contribute to closing existing gaps in stroke prevention efforts [3].
+
+
+# Methods 
+
+This stroke dataset originally contains 5110 observations with 12 attributes from Kaggle [7]. These attributes provide valuable information as described below.
+
+```{r summary table}
+#Total patients
+#nrow(data)
+
+# Number of subjects with or without stroke
+
+stroke.data %>% 
+  tabyl(stroke) %>%
+  adorn_totals(where="row") %>% 
+  adorn_pct_formatting(digits = 1) %>%
+  mutate(stroke=c("No Stroke", "Stroke","Total")) %>%
+  kable(caption = "Stroke Counts", col.names= c("Stroke Status","Number of Subjects","Percent")) %>%
+  kable_styling(latex_options = "striped") 
+
+# Count missing values in each column
+#colSums(is.na(data))
+
+```
+
+This stroke dataset originally contains 5110 observations with 12 attributes from Kaggle[reference].
+These attributes provide valuable information as described below.
+
+1. ID represented identification number of the patients.
+2. Gender referred to the sex of the participants as “Male”, “Female” and “Other”. There are 2115 males (41.4%), 2994 females (58.6%) and only 1 other.
+3. Age is the age of the patient. In this dataset, we have patients from just a few months to 82 years old. The average age is 43 years old.
+4. Hypertension referred to whether the patients have high blood pressure. 0 represents the patient does not have hypertension, 1 is the patient has hypertension. There are 4612 patients who did not have hypertension (90.3%) and 498 had hypertension (9.7%).
+5. Heart disease meant whether the patients have heart disease. If the patient doesn’t have any heart disease, the value is 0. The value is 1 if the patient has a heart disease. There are 4834 patients did not have heart disease (94.6%) and 276 patients have heart disease (5.4%).
+6. Ever married represented the marital status of the patients with only two choices “No” and “Yes”. There are 3353 patients were married (65.6%).
+7. Work type indicated four different types of employment of patients besides children (13.4%), government job (12.9%), never worked (0.43%), private employed (57.2%) and self-employed (16.03%).
+8. Residence type referred to the living status of the patients. 2514 patients lived in rural area (49.2%) and 2596 lived in urban (50.8%).
+9. Average glucose level gave the average glucose level in blood of the patients. The maximum of the level is 271.74 and the minimum is 55.12. The mean of this average glucose level among all patients is 106.15.
+10. BMI represented body mass index (measured in kg/m2) of the patients. There are 201 patients had no BMI value, these patients will be removed in the data cleaning step.
+11. Smoking status captured the smoking status of the patients. There are 885 patients formerly smoked (17.3%), 1892 patients who never smoked (37%), 789 patients are smoking (15.4%) when taking the survey and there are 1544 patients in the unknown (30.2%) category.
+12. Stroke showed whether the patients ever had a stroke. If the patients had a stroke before, the value is 1, the count of it is 249 (4.9%). The value with 0s meant the patients did not have a stroke, in this dataset, there are 4861 patients in this category (95.1%). 
+
+```{r prelim graphs, out.width="30%"}
+
+#summary(data$age)
+boxplot(data$age, main="Age")
+
+#summary(data$bmi)
+boxplot(data$bmi, main="BMI")
+
+#summary(data$avg_glucose_level)
+boxplot(data$avg_glucose_level, main="Average Glucose Level")
+
+```
+
+The distribution of age appears symmetrical, with no visible outliers, which indicates that the age data is evenly distributed without extreme values influencing the results, suggesting a balanced representation of participants across various age groups in the dataset. In contrast, BMI and average glucose level exhibit significant outliers in the upper tail. For BMI, these outliers may represent individuals with exceptionally high body mass indices, potentially indicating severe obesity or specific health conditions. Similarly, the average glucose level shows numerous outliers on the higher end, likely reflecting individuals with poorly controlled diabetes or other metabolic disorders. The presence of these outliers in BMI and average glucose level highlights the need for careful examination to confirm their validity as genuine data points or identify potential errors.
+
+As we showed in the previous description of dataset, there are 201 patients had BMI values with NA and 1 patients with Gender value "Other", so we removed those patients from the original data during initial data cleaning. The ID column is removed as it has no relevance to the stroke prediction. Moreover, later in the analysis, we removed certain patients that were defined as extreme outliers of the variables we picked in the model. Here is the recomputed total table after removing NAs in BMI.
+
+```{r summary table completecases}
+
+data <- data[data$gender!="Other",]
+
+data <- data[complete.cases(data$bmi),]
+
+# Number of subjects with or without stroke
+
+data %>% 
+  tabyl(stroke) %>%
+  adorn_totals(where="row") %>% 
+  adorn_pct_formatting(digits = 1) %>%
+  mutate(stroke=c("No Stroke", "Stroke","Total")) %>%
+  kable(caption = "Stroke Counts", col.names= c("Stroke Status","Number of Subjects","Percent")) %>%
+  kable_styling(latex_options = "striped") 
+
+# Count missing values in each column
+#colSums(is.na(data))
+
+```
+
+By the rule of thumb of 10 events (or nonevents, whichever is smaller) for each coefficient, 20 predictors can be included in the model. This dataset is large enough to include all variables to build a prediction model. To more accurately evaluate the impact of each independent variable on the dependent variable, categorical variables such as gender and work type are converted into dummy variables. This approach enables a more precise analysis by isolating the effect of each category within the original categorical variables, allowing for a clearer understanding of their influence on the dependent variable.
+
+The statistical analysis aimed to identify factors associated with stroke risk and to develop a predictive model. Initial exploratory data analysis included univariate descriptive statistics, with means and standard deviations reported for continuous variables and frequencies and percentages for categorical variables. Boxplots and bar plots were utilized to enhance the understanding of data distribution as visualization techniques. 
+
+To assess the relationship between potential predictors and the occurrence of stroke, logistic regression was used, with stroke as the binary outcome variable. The full model included all predictors in the dataset, and multicollinearity among variables was evaluated to ensure reliable coefficient estimates. Variables exhibiting high p-value by chi-squared were excluded from the model to improve its interpretability. Outliers detected during exploratory analysis were removed, and the model was refitted to improve robustness. This methodology ensures a systematic approach to identifying significant predictors and developing a logistic regression model for understanding stroke risk. All statistical analyses were conducted using R version 4.4.2. 
+
+
+# Results
+
+## Univariate Analysis
+
+We first observe the distributions of each of the variables. We note that non-event (no stroke) is the most common outcome in all cases. The proportion of stroke does not appear to be different for any levels of any variable.
+
+```{r univariate plots}
+
+p.gender <- ggplot(data=data, aes(x = gender, fill = factor(stroke, labels = c("No Stroke", "Stroke")))) +
+  geom_bar(position="stack") +
+  scale_fill_manual(values=c('royalblue', 'red'))+
+  labs(x = "Gender",
+       y = "Count",
+       fill = "Stroke Status") +
+theme_minimal()+
+  theme(axis.title = element_text(size = 15),
+        axis.text = element_text(size = 15),
+        legend.text=element_text(size=15), 
+        legend.title=element_text(size=15),
+        panel.border = element_rect(colour = "black", fill=NA, size=0.5),
+        legend.position = "bottom")+
+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+#age vs stroke
+p.age <- ggplot(data=data, aes(x = age, fill = factor(stroke, labels = c("No Stroke", "Stroke")))) +
+  geom_histogram(position = "stack", binwidth = 5, color = "white", size = 0.1) +  # binwidth may need adjustment
+  scale_fill_manual(values=c('royalblue', 'red'))+
+  labs(x = "Age",
+       y = "Count",
+       fill = "Stroke Status") +
+  theme_minimal() +
+    theme(axis.title = element_text(size = 15),
+        axis.text = element_text(size = 15),
+        legend.text=element_text(size=15), 
+        legend.title=element_text(size=15),
+        panel.border = element_rect(colour = "black", fill=NA, size=0.5),
+        legend.position = "bottom")+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+#hypertension vs stroke
+p.hypertension <- ggplot(data=data, aes(x = as.factor(hypertension), fill = factor(stroke, labels = c("No Stroke", "Stroke")))) +
+  geom_bar(position="stack") +
+  scale_fill_manual(values=c('royalblue', 'red'))+
+  labs(x = "Hypertension",
+       y = "Count",
+       fill = "Stroke Status") +
+  scale_x_discrete(labels = c("0" = "No", "1" = "Yes"))+
+theme_minimal()+
+  theme(axis.title = element_text(size = 15),
+        axis.text = element_text(size = 15),
+        legend.text=element_text(size=15), 
+        legend.title=element_text(size=15),
+        panel.border = element_rect(colour = "black", fill=NA, size=0.5),
+        legend.position = "bottom")+
+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+#heart disease vs stroke
+p.heart_disease <- ggplot(data=data, aes(x = as.factor(heart_disease), fill = factor(stroke, labels = c("No Stroke", "Stroke")))) +
+  geom_bar(position="stack") +
+  scale_fill_manual(values=c('royalblue', 'red'))+
+  labs(x = "Heart Disease",
+       y = "Count",
+       fill = "Stroke Status") +
+  scale_x_discrete(labels = c("0" = "No", "1" = "Yes"))+
+theme_minimal()+
+  theme(axis.title = element_text(size = 15),
+        axis.text = element_text(size = 15),
+        legend.text=element_text(size=15), 
+        legend.title=element_text(size=15),
+        panel.border = element_rect(colour = "black", fill=NA, size=0.5),
+        legend.position = "bottom")+
+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+#glucose vs stroke
+p.avg_glucose_level <- ggplot(data=data, aes(x = avg_glucose_level, fill = factor(stroke, labels = c("No Stroke", "Stroke")))) +
+  geom_histogram(position = "stack", binwidth = 5, color = "white", size = 0.1) +  # binwidth may need adjustment
+  scale_fill_manual(values=c('royalblue', 'red'))+
+  labs(x = "Average Glucose Level",
+       y = "Count",
+       fill = "Stroke Status") +
+  theme_minimal() +
+    theme(axis.title = element_text(size = 15),
+        axis.text = element_text(size = 15),
+        legend.text=element_text(size=15), 
+        legend.title=element_text(size=15),
+        panel.border = element_rect(colour = "black", fill=NA, size=0.5),
+        legend.position = "bottom")+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+#bmi vs stroke
+p.bmi <- ggplot(data=data, aes(x = bmi, fill = factor(stroke, labels = c("No Stroke", "Stroke")))) +
+  geom_histogram(position = "stack", binwidth = 5, color = "white", size = 0.1) +  # binwidth may need adjustment
+  scale_fill_manual(values=c('royalblue', 'red'))+
+  labs(x = "BMI",
+       y = "Count",
+       fill = "Stroke Status") +
+  theme_minimal() +
+    theme(axis.title = element_text(size = 15),
+        axis.text = element_text(size = 15),
+        legend.text=element_text(size=15), 
+        legend.title=element_text(size=15),
+        panel.border = element_rect(colour = "black", fill=NA, size=0.5),
+        legend.position = "bottom")+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+#married vs stroke
+p.married <- ggplot(data=data, aes(x = ever_married, fill = factor(stroke, labels = c("No Stroke", "Stroke")))) +
+  geom_bar(position="stack") +
+  scale_fill_manual(values=c('royalblue', 'red'))+
+  labs(x = "Marital Status",
+       y = "Count",
+       fill = "Stroke Status") +
+theme_minimal()+
+  theme(axis.title = element_text(size = 15),
+        axis.text = element_text(size = 15),
+        legend.text=element_text(size=15), 
+        legend.title=element_text(size=15),
+        panel.border = element_rect(colour = "black", fill=NA, size=0.5),
+        legend.position = "bottom")+
+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+#work type vs stroke
+p.work <- ggplot(data=data, aes(x = work_type, fill = factor(stroke, labels = c("No Stroke", "Stroke")))) +
+  geom_bar(position="stack") +
+  scale_fill_manual(values=c('royalblue', 'red'))+
+  labs(x = "Work Type",
+       y = "Count",
+       fill = "Stroke Status") +
+theme_minimal()+
+  theme(axis.title = element_text(size = 15),
+        axis.text = element_text(size = 12),
+        legend.text=element_text(size=15), 
+        legend.title=element_text(size=15),
+        panel.border = element_rect(colour = "black", fill=NA, size=0.5),
+        legend.position = "bottom")+
+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+#residence vs stroke
+p.residence <- ggplot(data=data, aes(x = Residence_type, fill = factor(stroke, labels = c("No Stroke", "Stroke")))) +
+  geom_bar(position="stack") +
+  scale_fill_manual(values=c('royalblue', 'red'))+
+  labs(x = "Residence Type",
+       y = "Count",
+       fill = "Stroke Status") +
+theme_minimal()+
+  theme(axis.title = element_text(size = 15),
+        axis.text = element_text(size = 15),
+        legend.text=element_text(size=15), 
+        legend.title=element_text(size=15),
+        panel.border = element_rect(colour = "black", fill=NA, size=0.5),
+        legend.position = "bottom")+
+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+#smoke vs stroke
+p.smoke <- ggplot(data=data, aes(x = smoking_status, fill = factor(stroke, labels = c("No Stroke", "Stroke")))) +
+  geom_bar(position="stack") +
+  scale_fill_manual(values=c('royalblue', 'red'))+
+  labs(x = "Smoking Status",
+       y = "Count",
+       fill = "Stroke Status") +
+theme_minimal()+
+  theme(axis.title = element_text(size = 15),
+        axis.text = element_text(size = 12),
+        legend.text=element_text(size=15), 
+        legend.title=element_text(size=15),
+        panel.border = element_rect(colour = "black", fill=NA, size=0.5),
+        legend.position = "bottom")+
+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+p.gender
+p.age
+p.hypertension
+p.heart_disease
+p.avg_glucose_level
+p.bmi
+p.married
+p.work
+p.residence
+p.smoke
+
+
+```
+
+## Correlation and Covariance
+
+Next, we look for correlations between variables. We consider any two variables with correlation greater than or equal to 0.4 to be at risk of multicollinearity, and so we will not fit them in the same model.
+
+```{r correlation and odds, out.width="70%"}
+correlation <- subset(data, select=-c(stroke))
+
+# Plot the correlation matrix
+ggcorr(correlation, label = TRUE, label_size = 2.5, hjust = 1, layout.exp = 2)
+
+oddsratio(data$gender, data$stroke)
+chisq.test(data$gender, data$stroke)
+
+oddsratio(data$hypertension, data$stroke)
+chisq.test(data$hypertension, data$stroke)
+
+oddsratio(data$heart_disease, data$stroke)
+chisq.test(data$heart_disease, data$stroke)
+
+oddsratio(data$ever_married, data$stroke)
+chisq.test(data$ever_married, data$stroke)
+
+#OR and CI for work type
+wt1<-filter(data, work_type == c("Govt_job", "children"))
+table(wt1$work_type, wt1$stroke)
+fisher.test(table(wt1$work_type, wt1$stroke))
+
+wt2<-filter(data, work_type == c("Never_worked", "children"))
+table(wt2$work_type, wt2$stroke)
+
+wt3<-filter(data, work_type == c("Private", "children"))
+table(wt3$work_type, wt3$stroke)
+fisher.test(table(wt3$work_type, wt3$stroke))
+
+wt4<-filter(data, work_type == c("Self-employed", "children"))
+table(wt4$work_type, wt4$stroke)
+fisher.test(table(wt4$work_type, wt4$stroke))
+chisq.test(data$work_type, data$stroke)
+
+oddsratio(data$Residence_type, data$stroke)
+chisq.test(data$Residence_type, data$stroke)
+
+#OR and CI for smoking status
+ss1<-filter(data, smoking_status == c("never smoked", "formerly smoked"))
+oddsratio(ss1$smoking_status, ss1$stroke)
+chisq.test(ss1$smoking_status, ss1$stroke)
+
+ss2<-filter(data, smoking_status == c("smokes", "formerly smoked"))
+oddsratio(ss2$smoking_status, ss2$stroke)
+chisq.test(ss2$smoking_status, ss2$stroke)
+
+ss3<-filter(data, smoking_status == c("Unknown", "formerly smoked"))
+oddsratio(ss3$smoking_status, ss3$stroke)
+chisq.test(ss3$smoking_status, ss3$stroke)
+
+chisq.test(data$smoking_status, data$stroke)
+
+```
+
+As shown in the correlation plot, the numerical variables have no multicollinearity.
+
+
+## Modeling
+
+Since the outcome variable is binary, we fit the logistic regression model. First, we fit the full model with all variables.
+
+Full model: $logit(Y) = \beta_0 + \beta_i x_i + ... + \beta_n x_n$, where
+- $Y $ is the probability of stroke
+- $\beta_0$ is the intercept
+- $\beta_i$ is the slope coefficient for each predictor i
+- $x_i$ is the value (numeric) or indicator value (binary) of each predictor i
+
+
+```{r full model}
+
+full1 <- glm(stroke ~., data=data, family=binomial(link="logit"))
+summary(full1)
+
+step(full1)
+
+glm.probs.full1 <- predict(full1, type = "response")
+```
+
+Through backward selection, we identify age, hypertension, heart disease, and average glucose level as variables for the reduced model.
+
+```{r reduced model}
+
+reduced1 <- glm(stroke ~ age + hypertension + heart_disease + avg_glucose_level, data=data, family=binomial(link="logit"))
+
+summary(reduced1)
+
+#plot(reduced1)
+
+#######################debeta and plot##################
+dfbetas <- dfbeta(reduced1)
+plot(dfbetas, type = 'l', main = "DFBETAs for Each Predictor")
+abline(h = c(-1, 1), col = "red")
+
+# Assume high influence is defined as dfbeta values outside of -1 to 1 range
+which(apply(abs(dfbetas), 1, max) > 1)
+
+
+
+##################### Compute leverage values###############
+hat_values <- hatvalues(reduced1)
+
+##################### Compute Cook's distance############
+cooks_distances <- cooks.distance(reduced1)
+
+################# Compute standardized residuals##################
+std_residuals <- rstandard(reduced1)
+
+########################Diagnostics Measures######################
+
+dm <- data.frame(hat_values, cooks_distances, std_residuals)
+
+# Find influential observations based on commonly used thresholds
+n <- nrow(data)
+p <- length(reduced1$coefficients)
+
+# Calculate the threshold for hat values
+hat_threshold <- 2 * p / n
+
+# Identify observations exceeding the thresholds
+# Create a new column in dm to flag the influential observations
+dm$influential <- with(dm, 
+                       hat_values > hat_threshold | 
+                       cooks_distances > 1 | 
+                       abs(std_residuals) > 2)
+
+# Print rows of the data frame where any condition is true
+influential_obs <- dm[dm$influential, ]
+nrow(influential_obs)
+
+# Plotting Cook's distance
+plot(cooks_distances, type = "h", main = "Cook's Distance", ylab = "Cook's distance")
+abline(h = 1, col = "red", lty = 2)
+
+# Plotting standardized residuals
+plot(std_residuals, type = "h", main = "Standardized Residuals", ylab = "Standardized residuals")
+abline(h = c(-2, 2), col = "red", lty = 2)
+
+# Plotting leverage values
+plot(hat_values, type = "h", main = "Leverage Values", ylab = "Leverage")
+abline(h = (2*p/n), col = "red", lty = 2)
+
+######################### Influence Plot ##########################
+influencePlot(reduced1, id.method="identify", main="Influence Plot", sub="Circle size is proportional to Cook's Distance")
+
+```
+
+We note the presence of the same outliers (42, 150, 159, 183, 207) in multiple diagnostic plots, so we remove them and fit the model again.
+
+
+```{r wo outliers}
+data.no.outliers <- data[-c(42, 150, 159, 183, 207),]
+# data.no.outliers <- data_clean?
+
+
+#Full no outliers
+full <- glm(stroke ~., data=data.no.outliers, family=binomial(link="logit"))
+glm.probs.full <- predict(full, type = "response")
+
+#Reduced no outliers
+reduced2 <- glm(stroke ~ age + hypertension + heart_disease + avg_glucose_level, data=data.no.outliers, family=binomial(link="logit"))
+summary(reduced2)
+
+# Goodness of Fit with and without outliers, can't use with different size
+#anova(reduced1, reduced2, test = "Chisq")
+
+cat("AIC Original: ", AIC(reduced1), " AIC Clean: ", AIC(reduced2), "\n")
+
+# Compare log-likelihood
+#cat("Log-Likelihood Original: ", logLik(reduced1), " Log-Likelihood Clean: ", logLik(reduced2), "\n")
+```
+
+Heart disease is no longer significant, implying that the outliers were falsely making it significant. We fit a new model without heart disease.
+
+```{r reduced wo outliers and heart disease}
+
+reduced <- glm(stroke ~ age + hypertension + avg_glucose_level, data=data.no.outliers, family=binomial(link="logit"))
+
+  
+glm.probs.reduced <- predict(reduced, type = "response")
+
+summary(reduced)
+
+# Odds ratios
+#plot_model(reduced, type = "est")
+
+# Individual variables vs stroke
+#plot_model(reduced, type = "pred")
+
+```
+
+
+Our final model has age, hypertension, and average glucose level as predictors of stroke. 
+
+Reduced model: $logit(Y)= \beta_0 + \beta_1 x_1 + \beta_2 x_2 + \beta_3 x_3$, where 
+- $Y$ is the probability of stroke
+- $\beta_0$ is the intercept
+- $\beta_1$ is the slope coefficient for age
+- $x_1$ is the value of age
+- $\beta_2$ is the slope coefficient for hypertension
+- $x_2$ is the indicator value of hypertension (0=no hypertension, 1=hypertension)
+- $\beta_3$ is the slope coefficient for avg_glucose_level
+- $x_3$ is the value of avg_glucose_level
+
+Next, we calculate the odds ratio for the binary variable hypertension and directly interpret model coefficients for the numeric variables age and average glucose level.
+
+For each 1-year increase in age, the odds of stroke increases by $e^.0730 = 1.076$.
+For each 1-unit increase is average glucose level, the odds of stroke increases by $e^.0052 = 1.005$ .
+
+
+```{r, OR estimate and 95% CI}
+
+df.OR <- data.frame(exp(cbind(OR=coef(reduced), confint(reduced))))
+df.OR <- df.OR[-c(1,2,4),]
+
+df.OR %>%
+  round(digits = 3) %>%
+  kable(caption = "Odds Ratio", col.names= c("Odds Ratio","95% CI Lower","95% CI Upper")) %>%
+  kable_styling(latex_options = "striped") 
+
+```
+
+The odds ratio for hypertension is `r round(df.OR[1], digits=3)` (`r round(df.OR[2], digits=3)`, `r round(df.OR[3], digits=3)`). The odds of stroke are `r round(df.OR[1,1], digits=1)` times higher for people with hypertension than people without hypertension.
+
+Next, we generate receiver operating characteristic (ROC) curves to compare the full and final reduced model.
+
+## ROC Curves
+
+```{r ROC}
+
+#ROC full
+# --------------------------------------------
+roc_full <- roc(data.no.outliers$stroke, glm.probs.full)
+plot(roc_full, col = "blue", main = "ROC Curve for Full Model", print.auc = TRUE)
+#abline(a = 0, b = 1, lty = 2, col = "red")  # Diagonal line for random guess
+
+
+
+#ROC reduced
+# --------------------------------------------
+roc_reduced <- roc(data.no.outliers$stroke, glm.probs.reduced)
+plot(roc_reduced, col = "blue", main = "ROC Curve for Reduced Model", print.auc = TRUE)
+#abline(a = 0, b = 1, lty = 2, col = "red")  # Diagonal line for random guess
+```
+
+The reduced model explains almost equally as much of the variation in probability of stroke (AUC=0.857) as the full model does (AUC=0.858). We have identified an appropriate reduced model to predict the probability of stroke based on demographic (age) and health (hypertension and average blood glucose) variables.
+
+# Discussion
+
+To assess the risk of stroke at varying levels of these three parameters, we generate example predictions using our model.
+
+```{r prediction}
+
+# Middle aged with hypertension and normal glucose
+pred1.df <- data.frame(age=50, hypertension=1, avg_glucose_level=80)
+pred1 <- predict(reduced, pred1.df, type="response", se.fit=TRUE)
+fit1 <- pred1$fit
+se1 <- pred1$se.fit
+z_value <- 1.96  # Z-value for 95% confidence
+ci_lower1 <- fit1 - z_value * se1
+ci_upper1 <- fit1 + z_value * se1
+results1 <- data.frame(Fit = fit1,Lower_CI = ci_lower1,Upper_CI = ci_upper1)
+ 
+# Young without hypertension and high glucose
+pred2.df <- data.frame(age=20, hypertension=0, avg_glucose_level=140)
+pred2 <- predict(reduced, pred2.df, type="response", se.fit=TRUE)
+fit2 <- pred2$fit
+se2 <- pred2$se.fit
+ci_lower2 <- fit2 - z_value * se2
+ci_upper2 <- fit2 + z_value * se2
+results2 <- data.frame(Fit = fit2,Lower_CI = ci_lower2,Upper_CI = ci_upper2)
+ 
+# Elderly with hypertension and high glucose
+pred3.df <- data.frame(age=80, hypertension=1, avg_glucose_level=140)
+pred3 <- predict(reduced, pred3.df, type="response", se.fit=TRUE)
+fit3 <- pred3$fit
+se3 <- pred3$se.fit
+ci_lower3 <- fit3 - z_value * se3
+ci_upper3 <- fit3 + z_value * se3
+results3 <- data.frame(Fit = fit3,Lower_CI = ci_lower3,Upper_CI = ci_upper3)
+ 
+pred.results <- rbind(results1,results2,results3)
+rownames(pred.results) <- c("Middle Aged, Hypertension, Normal Glucose", "Young, No Hypertension, High Glucose","Elderly, Hypertension, High Glucose")
+
+pred.results %>%
+  round(digits=3) %>%
+  kable(caption = "Predicted Values", col.names=c("Probability Estimate", "95% CI Lower", "95% CI Upper")) %>%
+  kable_styling(latex_options = "striped") 
+
+```
+
+For a 50-year-old with hypertension but with normal average glucose (105), the predicted probability of stroke is `r round(pred.results[1,1], digits=3)` with 95% CI: (`r round(pred.results[1,2], digits=3)`, `r round(pred.results[1,3], digits=3)`).
+
+For a 20-year-old without hypertension but with high average glucose (105), the predicted
+probability of stroke is `r round(pred.results[2,1], digits=3)` with 95% CI: (`r round(pred.results[2,2], digits=3)`, `r round(pred.results[2,3], digits=3)`).
+
+For a 80-year-old with hypertension and high average glucose (105), the predicted probability of stroke is `r round(pred.results[3,1], digits=3)` with 95% CI: (`r round(pred.results[3,2], digits=3)`, `r round(pred.results[3,3], digits=3)`).
+
+In conclusion, this study has successfully developed a predictive model for stroke risk using age, hypertension status, and average glucose level as key predictors. The findings highlight the importance of these factors in assessing stroke risk, providing valuable insights for early intervention and prevention strategies. The model demonstrates the potential for identifying individuals at higher risk of stroke, which can guide timely clinical decisions and preventive measures. Moving forward, improving model accuracy through further refinement and additional risk factors will be crucial to enhancing the effectiveness of stroke prevention efforts and reducing the overall health burden of stroke.
+
+
+# References
+
+1.	American Heart Association. (2023). Stroke Risk Factors. Retrieved from https://www.heart.org/en/health-topics/stroke/stroke-risk-factors
+2.	Centers for Disease Control and Prevention. (2023). Stroke Facts. Retrieved from https://www.cdc.gov/stroke/facts.htm
+3.	Feigin, V. L., et al. (2021). "Global burden of stroke and risk factors in 204 countries and territories, 1990–2019: a systematic analysis for the Global Burden of Disease Study 2019." The Lancet Neurology, 20(10), 795-820. DOI: 10.1016/S1474-4422(21)00252-0
+4.	Mayo Clinic. (2023). Stroke: Symptoms & Causes. Retrieved from https://www.mayoclinic.org/diseases-conditions/stroke/symptoms-causes/syc-20350113
+5.	MedlinePlus. (2023). Stroke. Retrieved from https://medlineplus.gov/stroke.html
+6.	Soriano, F. (2021, January 26). Stroke Prediction Dataset. Kaggle. https://www.kaggle.com/datasets/fedesoriano/stroke-prediction-dataset
+7.	World Health Organization. (2022). Stroke. Retrieved from https://www.who.int/news-room/fact-sheets/detail/stroke
