@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 # Load data
-file_path = r"C:\Users\kateg\OneDrive\Desktop\KUMC\BIOS 835\Final Project\healthcare-dataset-stroke-data.csv"
+file_path = "healthcare-dataset-stroke-data.csv"
 df = pd.read_csv(file_path)
 
 #print(df.head())
